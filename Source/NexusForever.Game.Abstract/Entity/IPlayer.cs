@@ -131,9 +131,9 @@ namespace NexusForever.Game.Abstract.Entity
         void DiscoverTaxiNode(uint taxiNodeId);
 
         /// <summary>
-        /// Return true if a kiosk of the supplied taxi node is visible and within range of <see cref="IPlayer"/>.
+        /// Return the closest visible kiosk of the supplied taxi node within range of <see cref="IPlayer"/>, null if there is none.
         /// </summary>
-        bool IsNearTaxiNode(uint taxiNodeId, float range);
+        IWorldEntity GetNearTaxiKiosk(uint taxiNodeId, float range);
 
         /// <summary>
         /// Returns if <see cref="IPlayer"/> is on a taxi ride.

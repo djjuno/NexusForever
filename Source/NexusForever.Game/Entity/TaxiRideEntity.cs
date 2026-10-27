@@ -6,6 +6,7 @@ using NexusForever.Game.Static.Entity;
 using NexusForever.Game.Static.Entity.Movement.Spline;
 using NexusForever.Network.World.Entity;
 using NexusForever.Network.World.Entity.Model;
+using NexusForever.Network.World.Message.Model;
 using NLog;
 
 namespace NexusForever.Game.Entity
@@ -144,6 +145,9 @@ namespace NexusForever.Game.Entity
             seated = true;
             log.Trace($"Taxi {Guid}: player {PassengerGuid} seated, flying {splines.Count} spline(s) to world {destinationWorldId} {destination}.");
 
+            // the rider can't fight back or get off, whatever was attacking them loses them now and nothing attacks them until they land
+            player.ThreatManager.ClearThreatList();
+
             LaunchLeg(0);
         }
 
@@ -227,6 +231,9 @@ namespace NexusForever.Game.Entity
                 RemoveFromMap();
                 return;
             }
+
+            // the driver's goodbye, the client plays it only while the player still sits in the cab
+            player.Session.EnqueueMessageEncrypted(new ServerTaxiLanding());
 
             PassengerRemove(player);
             MoveToDestination(player);

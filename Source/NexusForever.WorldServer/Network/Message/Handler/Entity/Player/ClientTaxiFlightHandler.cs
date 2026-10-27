@@ -12,6 +12,8 @@ using NexusForever.GameTable;
 using NexusForever.GameTable.Model;
 using NexusForever.Network.Message;
 using NexusForever.Network.World.Message.Model;
+using NexusForever.Network.World.Message.Model.Spell;
+using NexusForever.Network.World.Message.Static;
 
 namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
 {
@@ -19,7 +21,8 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
     /// Taxi kiosk flights and shuttles, the player pays for the route and is moved to the destination of its last leg.
     /// </summary>
     /// <remarks>
-    /// The price is the sum of TaxiRoute.price for each leg, the same price the taxi map shows.
+    /// The price is the price the taxi map shows: for each leg the content tier of its destination node squared times GameFormula 952 (132.75),
+    /// truncated. TaxiRoute.price matches the map for only a few routes and is 0 for many, they flew for free.
     /// The player rides a holo cab (<see cref="TaxiRideEntity"/>) along the splines of the route's legs on the player's world, a route whose first
     /// leg has no spline there is a teleport to the destination.
     /// </remarks>
@@ -59,8 +62,15 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
                 return;
             }
 
-            if (!CanFly(player, legs))
+            if (!CanFly(player, legs, out IWorldEntity kiosk))
                 return;
+
+            // the taxi map can't be used in combat, a client that sent the purchase anyway is told why
+            if (player.InCombat)
+            {
+                player.SendGenericError(GenericError.PlayerCannotWhileInCombat);
+                return;
+            }
 
             uint destination = legs[^1].TaxiNodeIdDestination;
             TaxiNodeEntry destinationEntry = gameTableManager.TaxiNode.GetEntry(destination);
@@ -74,14 +84,25 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
             if (!player.CanTeleport() || player.IsOnTaxiRide)
                 return;
 
-            ulong price = legs.Aggregate(0ul, (sum, leg) => sum + leg.Price);
+            float perTier = gameTableManager.GameFormula.GetEntry(FareFormulaId)?.Datafloat0 ?? DefaultFarePerTier;
+            ulong price = legs.Aggregate(0ul, (sum, leg) => sum + LegFare(gameTableManager.TaxiNode.GetEntry(leg.TaxiNodeIdDestination), perTier));
             if (!player.CurrencyManager.CanAfford(CurrencyType.Credits, price))
+            {
+                // the map shows the price in red but still sends the purchase
+                player.SendGenericError(GenericError.VendorNotEnoughCash);
                 return;
+            }
 
             player.CurrencyManager.CurrencySubtractAmount(CurrencyType.Credits, price);
 
             // flying somewhere discovers it
             player.DiscoverTaxiNode(destination);
+
+            // ends the interaction with the kiosk, which closes the route window, it stayed open over the ride
+            session.EnqueueMessageEncrypted(new ServerInteractionChange
+            {
+                InteractionUnitId = kiosk.Guid
+            });
 
             Vector3 rotation = new Quaternion(location.Facing0, location.Facing1, location.Facing2, location.Facing3).ToEuler();
             var position     = new Vector3(location.Position0, location.Position1, location.Position2);
@@ -152,8 +173,10 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
         /// <summary>
         /// The player has to be at a kiosk of the first node and every node on the route has to be neutral or of their faction.
         /// </summary>
-        private bool CanFly(IPlayer player, TaxiRouteEntry[] legs)
+        private bool CanFly(IPlayer player, TaxiRouteEntry[] legs, out IWorldEntity kiosk)
         {
+            kiosk = null;
+
             // TaxiNode.taxiNodeFactionEnum: 0 neutral, 1 Exile, 2 Dominion
             uint faction = player.Faction1 switch
             {
@@ -170,13 +193,32 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
                 return false;
 
             uint source = legs[0].TaxiNodeIdSource;
-            if (!player.IsNearTaxiNode(source, KioskRange))
+            kiosk = player.GetNearTaxiKiosk(source, KioskRange);
+            if (kiosk == null)
             {
                 log.LogWarning($"Taxi request from {player.Name} refused, no kiosk of node {source} within range.");
                 return false;
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// GameFormula row of the fare per content tier, and the fare per tier if the row is missing.
+        /// </summary>
+        private const uint FareFormulaId = 952u;
+        private const float DefaultFarePerTier = 132.75f;
+
+        /// <summary>
+        /// Return the fare of a leg to the supplied destination node: its content tier squared times the fare per tier, truncated.
+        /// </summary>
+        private static ulong LegFare(TaxiNodeEntry destination, float perTier)
+        {
+            if (destination == null || destination.ContentTier == 0u)
+                return 0ul;
+
+            float fare = destination.ContentTier * perTier * destination.ContentTier;
+            return fare > 0f ? (ulong)fare : 0ul;
         }
     }
 }
