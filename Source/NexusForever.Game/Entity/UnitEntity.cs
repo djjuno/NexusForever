@@ -13,6 +13,7 @@ using NexusForever.Game.Static.Spell;
 using NexusForever.GameTable;
 using NexusForever.GameTable.Model;
 using NexusForever.Network.World.Message.Model;
+using NexusForever.Network.World.Message.Static;
 using NexusForever.Script.Template;
 using NexusForever.Shared.Game;
 
@@ -310,7 +311,16 @@ namespace NexusForever.Game.Entity
             if (parameters.UserInitiatedSpellCast)
             {
                 if (this is IPlayer player)
+                {
+                    // a taxi rider can't cast: the cast took them off the cab and they fell from the air
+                    if (player.IsOnTaxiRide)
+                    {
+                        player.SendGenericError(GenericError.EmbarkCannotDoWhileOnTaxi);
+                        return;
+                    }
+
                     player.Dismount();
+                }
             }
 
             var spell = new Spell.Spell(this, parameters);
