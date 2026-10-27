@@ -24,6 +24,7 @@ namespace NexusForever.Game.Entity
             sc.AddTransient<IMountEntity, MountEntity>();
             sc.AddTransient<ICollectableUnitEntity, CollectableUnitEntity>();
             sc.AddTransient<ITaxiEntity, TaxiEntity>();
+            sc.AddTransient<ITaxiRideEntity, TaxiRideEntity>();
             sc.AddTransient<ISimpleEntity, SimpleEntity>();
             sc.AddTransient<IPlatformEntity, PlatformEntity>();
             sc.AddTransient<IMailboxEntity, MailboxEntity>();

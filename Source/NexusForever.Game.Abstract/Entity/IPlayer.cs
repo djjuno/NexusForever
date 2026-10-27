@@ -136,6 +136,26 @@ namespace NexusForever.Game.Abstract.Entity
         bool IsNearTaxiNode(uint taxiNodeId, float range);
 
         /// <summary>
+        /// Returns if <see cref="IPlayer"/> is on a taxi ride.
+        /// </summary>
+        bool IsOnTaxiRide { get; }
+
+        /// <summary>
+        /// Returns if <see cref="IPlayer"/> is logged in, false once the logout has started.
+        /// </summary>
+        bool IsOnline { get; }
+
+        /// <summary>
+        /// Set where the taxi ride of <see cref="IPlayer"/> lands, it is saved instead of the position until <see cref="ClearTaxiArrival"/>.
+        /// </summary>
+        void SetTaxiArrival(ushort worldId, ushort worldZoneId, Vector3 position, Vector3 rotation);
+
+        /// <summary>
+        /// The taxi ride of <see cref="IPlayer"/> has ended, the position is saved again.
+        /// </summary>
+        void ClearTaxiArrival();
+
+        /// <summary>
         /// Teleport <see cref="IPlayer"/> to supplied location.
         /// </summary>
         void TeleportTo(ushort worldId, float x, float y, float z, IMapLock mapLock = null, TeleportReason reason = TeleportReason.Relocate);

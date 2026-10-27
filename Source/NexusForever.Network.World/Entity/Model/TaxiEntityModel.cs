@@ -20,14 +20,15 @@ namespace NexusForever.Network.World.Entity.Model
 
         public uint CreatureId { get; set; }
         public ushort UnitVehicleId { get; set; }
-        public uint OwnerId { get; set; }
         public List<Passenger> Passengers { get; set; } = new();
 
+        /// <remarks>
+        /// A taxi has the vehicle layout, with no owner id: with one the client read the rest of the create misaligned and never made the cab.
+        /// </remarks>
         public void Write(GamePacketWriter writer)
         {
             writer.Write(CreatureId, 18);
             writer.Write(UnitVehicleId, 14);
-            writer.Write(OwnerId);
 
             writer.Write((byte)Passengers.Count, 3);
             Passengers.ForEach(s => s.Write(writer));

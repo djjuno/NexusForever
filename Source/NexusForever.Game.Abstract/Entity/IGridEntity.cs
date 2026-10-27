@@ -85,6 +85,11 @@ namespace NexusForever.Game.Abstract.Entity
         bool CanSeeEntity(IGridEntity entity);
 
         /// <summary>
+        /// Returns if <see cref="IGridEntity"/> keeps supplied <see cref="IGridEntity"/> in its vision, and stays in its vision, even out of range.
+        /// </summary>
+        bool KeepsInVision(IGridEntity entity);
+
+        /// <summary>
         /// Add tracked <see cref="IGridEntity"/> that is in vision range.
         /// </summary>
         void AddVisible(IGridEntity entity);

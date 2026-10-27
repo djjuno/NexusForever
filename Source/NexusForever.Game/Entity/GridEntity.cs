@@ -201,6 +201,14 @@ namespace NexusForever.Game.Entity
         }
 
         /// <summary>
+        /// Returns if <see cref="IGridEntity"/> keeps supplied <see cref="IGridEntity"/> in its vision, and stays in its vision, even out of range.
+        /// </summary>
+        public virtual bool KeepsInVision(IGridEntity entity)
+        {
+            return false;
+        }
+
+        /// <summary>
         /// Add tracked <see cref="IGridEntity"/> that is in vision range.
         /// </summary>
         public virtual void AddVisible(IGridEntity entity)
@@ -287,6 +295,10 @@ namespace NexusForever.Game.Entity
             // old entities now out of vision range
             foreach (IGridEntity entity in visibleEntities.Values.Except(entities).ToList())
             {
+                // a taxi cab and its rider, a cab destroyed and created again at the rider's client during the ride lost its rider
+                if (entity != this && entity.Map == Map && (KeepsInVision(entity) || entity.KeepsInVision(this)))
+                    continue;
+
                 RemoveVisible(entity);
                 entity.RemoveVisible(this);
             }
