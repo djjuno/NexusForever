@@ -284,8 +284,9 @@ namespace NexusForever.Game.Entity
         {
             List<IGridEntity> entities = Map.Search(Position, Map.VisionRange, new SearchCheckRange<IGridEntity>(Position, Map.VisionRange)).ToList();
 
-            // new entities now in vision range
-            foreach (IGridEntity entity in entities.Except(visibleEntities.Values))
+            // new entities now in vision range, vehicles last: a client meets the riders before the vehicle that seats them, a vehicle created
+            // before its rider showed it empty
+            foreach (IGridEntity entity in entities.Except(visibleEntities.Values).OrderBy(e => e is IVehicleEntity))
             {
                 AddVisible(entity);
                 if (entity != this)
