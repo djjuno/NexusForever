@@ -67,9 +67,16 @@ namespace NexusForever.Game.Entity
 
         public override void OnRemoveFromMap()
         {
-            foreach (IVehiclePassenger passenger in passengers)
+            // a copy: PassengerRemove takes the passenger out of the list
+            foreach (IVehiclePassenger passenger in passengers.ToList())
             {
                 IPlayer entity = GetVisible<IPlayer>(passenger.Guid);
+                if (entity == null)
+                {
+                    passengers.Remove(passenger);
+                    continue;
+                }
+
                 PassengerRemove(entity, passenger);
             }
 
@@ -80,8 +87,10 @@ namespace NexusForever.Game.Entity
         {
             foreach (IVehiclePassenger passenger in passengers)
             {
+                // a passenger the vehicle can no longer see (it left the map or logged out) is not carried
                 IPlayer entity = GetVisible<IPlayer>(passenger.Guid);
-                Map.EnqueueRelocate(entity, vector);
+                if (entity != null)
+                    Map.EnqueueRelocate(entity, vector);
             }
 
             base.OnRelocate(vector);
@@ -92,8 +101,27 @@ namespace NexusForever.Game.Entity
             base.Update(lastTick);
 
             // passengers are delay added to make sure the vehicle exists at the client
+            SeatPendingPassengers();
+        }
+
+        /// <summary>
+        /// Seat the passengers waiting for the vehicle.
+        /// </summary>
+        /// <remarks>
+        /// A vehicle can call this right after its create was sent, so the client gets the vehicle and the seat in the same flush.
+        /// </remarks>
+        protected void SeatPendingPassengers()
+        {
             while (pendingAdd.TryDequeue(out IVehiclePassenger passenger))
                 PassengerAdd(passenger);
+        }
+
+        /// <summary>
+        /// Invoked before the seat of <see cref="IPlayer"/> is sent, a vehicle that wants the platform set at the client first sets it here.
+        /// </summary>
+        protected virtual void OnBeforePassengerSeat(IPlayer player, IVehiclePassenger passenger)
+        {
+            // deliberately empty
         }
 
         /// <summary>
@@ -166,6 +194,8 @@ namespace NexusForever.Game.Entity
             {
             });
 
+            OnBeforePassengerSeat(player, passenger);
+
             // sets vehicle guid, seat type and seat position to local self entity at client
             // might not be correct as ServerVehiclePassengerAdd does this too, used for changing seats instead?
             player.Session.EnqueueMessageEncrypted(new Server089B
@@ -198,7 +228,9 @@ namespace NexusForever.Game.Entity
                 Faction2 = player.Faction2;
             }
 
-            player.SetPlatform(this);
+            // a vehicle that set the platform already (OnBeforePassengerSeat) keeps it, setting it again sends a world position first
+            if (player.PlatformGuid != Guid)
+                player.SetPlatform(this);
 
             passengers.Add(passenger);
             OnPassengerAdd(player, passenger.SeatType, passenger.SeatPosition);

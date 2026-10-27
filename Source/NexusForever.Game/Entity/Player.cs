@@ -509,28 +509,34 @@ namespace NexusForever.Game.Entity
             {
                 if ((saveMask & PlayerSaveMask.Location) != 0)
                 {
-                    model.LocationX = Position.X;
+                    // on a taxi ride the player is in the air, a logout or crash during the ride lands them at the destination they paid for
+                    Vector3 position   = taxiArrival?.Position ?? Position;
+                    Vector3 rotation   = taxiArrival?.Rotation ?? Rotation;
+                    ushort worldId     = taxiArrival?.WorldId ?? (ushort)Map.Entry.Id;
+                    ushort worldZoneId = taxiArrival?.WorldZoneId ?? (ushort)Zone.Id;
+
+                    model.LocationX = position.X;
                     entity.Property(p => p.LocationX).IsModified = true;
 
-                    model.LocationY = Position.Y;
+                    model.LocationY = position.Y;
                     entity.Property(p => p.LocationY).IsModified = true;
 
-                    model.LocationZ = Position.Z;
+                    model.LocationZ = position.Z;
                     entity.Property(p => p.LocationZ).IsModified = true;
 
-                    model.RotationX = Rotation.X;
+                    model.RotationX = rotation.X;
                     entity.Property(p => p.RotationX).IsModified = true;
 
-                    model.RotationY = Rotation.Y;
+                    model.RotationY = rotation.Y;
                     entity.Property(p => p.RotationY).IsModified = true;
 
-                    model.RotationZ = Rotation.Z;
+                    model.RotationZ = rotation.Z;
                     entity.Property(p => p.RotationZ).IsModified = true;
 
-                    model.WorldId = (ushort)Map.Entry.Id;
+                    model.WorldId = worldId;
                     entity.Property(p => p.WorldId).IsModified = true;
 
-                    model.WorldZoneId = (ushort)Zone.Id;
+                    model.WorldZoneId = worldZoneId;
                     entity.Property(p => p.WorldZoneId).IsModified = true;
                 }
 
@@ -683,6 +689,36 @@ namespace NexusForever.Game.Entity
                 if (Vector3.DistanceSquared(kiosk.Position, Position) <= discoveryRange * discoveryRange)
                     DiscoverTaxiNode(taxiNodeId);
             }
+        }
+
+        private readonly record struct TaxiArrival(ushort WorldId, ushort WorldZoneId, Vector3 Position, Vector3 Rotation);
+
+        private TaxiArrival? taxiArrival;
+
+        /// <summary>
+        /// Returns if <see cref="IPlayer"/> is on a taxi ride.
+        /// </summary>
+        public bool IsOnTaxiRide => taxiArrival != null;
+
+        /// <summary>
+        /// Set where the taxi ride of <see cref="IPlayer"/> lands, it is saved instead of the position until <see cref="ClearTaxiArrival"/>.
+        /// </summary>
+        public void SetTaxiArrival(ushort worldId, ushort worldZoneId, Vector3 position, Vector3 rotation)
+        {
+            taxiArrival = new TaxiArrival(worldId, worldZoneId, position, rotation);
+            saveMask |= PlayerSaveMask.Location;
+        }
+
+        /// <summary>
+        /// The taxi ride of <see cref="IPlayer"/> has ended, the position is saved again.
+        /// </summary>
+        public void ClearTaxiArrival()
+        {
+            if (taxiArrival == null)
+                return;
+
+            taxiArrival = null;
+            saveMask |= PlayerSaveMask.Location;
         }
 
         protected override IEntityModel BuildEntityModel()
@@ -937,6 +973,55 @@ namespace NexusForever.Game.Entity
                     InCombat = unitEntity.InCombat
                 });
             }
+
+            SendTaxiSeats(entity);
+        }
+
+        /// <summary>
+        /// A taxi cab is created without its rider (<see cref="TaxiRideEntity"/>): after every create of a cab or of its rider, seat the rider again.
+        /// </summary>
+        private void SendTaxiSeats(IGridEntity entity)
+        {
+            if (entity == this)
+                return;
+
+            if (entity is ITaxiRideEntity cab)
+            {
+                foreach (IVehiclePassenger passenger in cab)
+                    if (passenger.Guid == Guid || visibleEntities.ContainsKey(passenger.Guid))
+                        SendTaxiSeat(cab, passenger);
+            }
+            else if (entity is IPlayer rider
+                && rider.PlatformGuid is uint cabGuid
+                && GetVisible<ITaxiRideEntity>(cabGuid) is ITaxiRideEntity riderCab
+                && riderCab.GetPassenger(rider.Guid) is IVehiclePassenger riderSeat)
+                SendTaxiSeat(riderCab, riderSeat);
+        }
+
+        private void SendTaxiSeat(ITaxiRideEntity cab, IVehiclePassenger passenger)
+        {
+            // the position of a rider is relative to the cab, a client that got the rider before the cab gets it again now that it knows the cab
+            if (passenger.Guid != Guid && GetVisible<IPlayer>(passenger.Guid) is IPlayer seatedRider)
+                seatedRider.MovementManager.SendNetworkEntityCommands(Session);
+
+            if (passenger.Guid == Guid)
+            {
+                Session.EnqueueMessageEncrypted(new Server089B
+                {
+                    Self         = Guid,
+                    Vehicle      = cab.Guid,
+                    SeatType     = passenger.SeatType,
+                    SeatPosition = passenger.SeatPosition
+                });
+            }
+
+            Session.EnqueueMessageEncrypted(new ServerVehiclePassengerAdd
+            {
+                Self         = cab.Guid,
+                SeatType     = passenger.SeatType,
+                SeatPosition = passenger.SeatPosition,
+                UnitId       = passenger.Guid
+            });
         }
 
         public override void RemoveVisible(IGridEntity entity)

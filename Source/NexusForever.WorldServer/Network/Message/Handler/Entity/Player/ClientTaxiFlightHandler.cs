@@ -1,8 +1,11 @@
-﻿using System.Linq;
+﻿using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Microsoft.Extensions.Logging;
 using NexusForever.Game;
 using NexusForever.Game.Abstract.Entity;
+using NexusForever.Game.Entity;
+using NexusForever.Game.Map;
 using NexusForever.Game.Static.Entity;
 using NexusForever.Game.Static.Reputation;
 using NexusForever.GameTable;
@@ -19,7 +22,8 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
     /// <remarks>
     /// The price is the price the taxi map shows: for each leg the content tier of its destination node squared times GameFormula 952 (132.75),
     /// truncated. TaxiRoute.price matches the map for only a few routes and is 0 for many, they flew for free.
-    /// Retail flew the player along the route splines, for now the player is teleported to the destination.
+    /// The player rides a holo cab (<see cref="TaxiRideEntity"/>) along the splines of the route's legs on the player's world, a route whose first
+    /// leg has no spline there is a teleport to the destination.
     /// </remarks>
     public class ClientTaxiFlightHandler : IMessageHandler<IWorldSession, ClientTaxiFlight>
     {
@@ -30,13 +34,16 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
 
         private readonly ILogger<ClientTaxiFlightHandler> log;
         private readonly IGameTableManager gameTableManager;
+        private readonly IEntityFactory entityFactory;
 
         public ClientTaxiFlightHandler(
             ILogger<ClientTaxiFlightHandler> log,
-            IGameTableManager gameTableManager)
+            IGameTableManager gameTableManager,
+            IEntityFactory entityFactory)
         {
             this.log              = log;
             this.gameTableManager = gameTableManager;
+            this.entityFactory    = entityFactory;
         }
 
         #endregion
@@ -73,7 +80,7 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
                 return;
             }
 
-            if (!player.CanTeleport())
+            if (!player.CanTeleport() || player.IsOnTaxiRide)
                 return;
 
             float perTier = gameTableManager.GameFormula.GetEntry(FareFormulaId)?.Datafloat0 ?? DefaultFarePerTier;
@@ -90,9 +97,47 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
             // flying somewhere discovers it
             player.DiscoverTaxiNode(destination);
 
-            var rotation = new Quaternion(location.Facing0, location.Facing1, location.Facing2, location.Facing3);
-            player.Rotation = rotation.ToEuler();
+            Vector3 rotation = new Quaternion(location.Facing0, location.Facing1, location.Facing2, location.Facing3).ToEuler();
+            var position     = new Vector3(location.Position0, location.Position1, location.Position2);
+
+            if (TryStartRide(player, legs, location, position, rotation))
+                return;
+
+            player.Rotation = rotation;
             player.TeleportTo((ushort)location.WorldId, location.Position0, location.Position1, location.Position2);
+        }
+
+        /// <summary>
+        /// Seat the player in a cab that flies the splines of the route's legs on the player's world, false if the first leg has none.
+        /// </summary>
+        /// <remarks>
+        /// Legs after the last spline, on another world or without one, are covered by the move to the destination when the cab lands.
+        /// </remarks>
+        private bool TryStartRide(IPlayer player, TaxiRouteEntry[] legs, WorldLocation2Entry location, Vector3 position, Vector3 rotation)
+        {
+            List<TaxiRidePlanner.SplineEnds> plan = TaxiRidePlanner.Plan(gameTableManager, legs, player.Map.Entry.Id);
+            if (plan.Count == 0 || plan.Any(s => s.SplineId > ushort.MaxValue))
+                return false;
+
+            // off a mount first, the cab seats the player
+            if (player.PlatformGuid != null)
+                player.Dismount();
+
+            var mapPosition = new MapPosition
+            {
+                Position = plan[0].First
+            };
+
+            var cab = entityFactory.CreateEntity<ITaxiRideEntity>();
+            if (!player.Map.CanEnter(cab, mapPosition))
+                return false;
+
+            cab.Initialise(player, plan.Select(s => (ushort)s.SplineId).ToList(), plan.Sum(s => s.Length),
+                (ushort)location.WorldId, (ushort)location.WorldZoneId, position, rotation);
+            player.Map.EnqueueAdd(cab, mapPosition);
+
+            log.LogTrace($"Taxi for {player.Name}: riding {plan.Count} of {legs.Length} leg(s), splines {string.Join(",", plan.Select(s => s.SplineId))}.");
+            return true;
         }
 
         /// <summary>
