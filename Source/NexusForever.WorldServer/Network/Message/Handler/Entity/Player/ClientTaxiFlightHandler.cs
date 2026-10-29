@@ -12,6 +12,7 @@ using NexusForever.GameTable;
 using NexusForever.GameTable.Model;
 using NexusForever.Network.Message;
 using NexusForever.Network.World.Message.Model;
+using NexusForever.Network.World.Message.Model.Spell;
 using NexusForever.Network.World.Message.Static;
 
 namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
@@ -61,7 +62,7 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
                 return;
             }
 
-            if (!CanFly(player, legs))
+            if (!CanFly(player, legs, out IWorldEntity kiosk))
                 return;
 
             // the taxi map can't be used in combat, a client that sent the purchase anyway is told why
@@ -96,6 +97,12 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
 
             // flying somewhere discovers it
             player.DiscoverTaxiNode(destination);
+
+            // ends the interaction with the kiosk, which closes the route window, it stayed open over the ride
+            session.EnqueueMessageEncrypted(new ServerInteractionChange
+            {
+                InteractionUnitId = kiosk.Guid
+            });
 
             Vector3 rotation = new Quaternion(location.Facing0, location.Facing1, location.Facing2, location.Facing3).ToEuler();
             var position     = new Vector3(location.Position0, location.Position1, location.Position2);
@@ -166,8 +173,10 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
         /// <summary>
         /// The player has to be at a kiosk of the first node and every node on the route has to be neutral or of their faction.
         /// </summary>
-        private bool CanFly(IPlayer player, TaxiRouteEntry[] legs)
+        private bool CanFly(IPlayer player, TaxiRouteEntry[] legs, out IWorldEntity kiosk)
         {
+            kiosk = null;
+
             // TaxiNode.taxiNodeFactionEnum: 0 neutral, 1 Exile, 2 Dominion
             uint faction = player.Faction1 switch
             {
@@ -184,7 +193,8 @@ namespace NexusForever.WorldServer.Network.Message.Handler.Entity.Player
                 return false;
 
             uint source = legs[0].TaxiNodeIdSource;
-            if (!player.IsNearTaxiNode(source, KioskRange))
+            kiosk = player.GetNearTaxiKiosk(source, KioskRange);
+            if (kiosk == null)
             {
                 log.LogWarning($"Taxi request from {player.Name} refused, no kiosk of node {source} within range.");
                 return false;

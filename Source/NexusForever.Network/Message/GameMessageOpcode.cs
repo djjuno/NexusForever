@@ -823,6 +823,7 @@ namespace NexusForever.Network.Message
         ServerAnnounceCommandOnCooldown = 0x0832,
         ClientSuggest                   = 0x0833,
         ClientAccountItemTake           = 0x0839,
+        ServerTaxiLanding               = 0x083A,
         ServerLoadingScreen             = 0x083C,
         ServerTimeOfDay                 = 0x0845,
         ServerMapTrackedUnitDisable     = 0x0848,

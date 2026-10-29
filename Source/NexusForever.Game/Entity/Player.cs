@@ -663,14 +663,16 @@ namespace NexusForever.Game.Entity
         }
 
         /// <summary>
-        /// Return true if a kiosk of the supplied taxi node is visible and within range of <see cref="IPlayer"/>.
+        /// Return the closest visible kiosk of the supplied taxi node within range of <see cref="IPlayer"/>, null if there is none.
         /// </summary>
-        public bool IsNearTaxiNode(uint taxiNodeId, float range)
+        public IWorldEntity GetNearTaxiKiosk(uint taxiNodeId, float range)
         {
             return visibleEntities.Values
                 .OfType<IWorldEntity>()
-                .Any(e => e.CreatureEntry?.TaxiNodeId == taxiNodeId
-                    && Vector3.DistanceSquared(e.Position, Position) <= range * range);
+                .Where(e => e.CreatureEntry?.TaxiNodeId == taxiNodeId
+                    && Vector3.DistanceSquared(e.Position, Position) <= range * range)
+                .OrderBy(e => Vector3.DistanceSquared(e.Position, Position))
+                .FirstOrDefault();
         }
 
         /// <summary>
@@ -689,6 +691,18 @@ namespace NexusForever.Game.Entity
                 if (Vector3.DistanceSquared(kiosk.Position, Position) <= discoveryRange * discoveryRange)
                     DiscoverTaxiNode(taxiNodeId);
             }
+        }
+
+        /// <summary>
+        /// Returns whether or not this <see cref="IPlayer"/> is an attackable target.
+        /// </summary>
+        public override bool IsValidAttackTarget()
+        {
+            // a taxi rider can't fight back or get off, nothing attacks them from the purchase to the landing
+            if (IsOnTaxiRide)
+                return false;
+
+            return base.IsValidAttackTarget();
         }
 
         private readonly record struct TaxiArrival(ushort WorldId, ushort WorldZoneId, Vector3 Position, Vector3 Rotation);

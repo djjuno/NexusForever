@@ -373,7 +373,7 @@ namespace NexusForever.Game.Entity
         /// <summary>
         /// Returns whether or not this <see cref="IUnitEntity"/> is an attackable target.
         /// </summary>
-        public bool IsValidAttackTarget()
+        public virtual bool IsValidAttackTarget()
         {
             // TODO: Expand on this. There's bound to be flags or states that should prevent an entity from being attacked.
             return (this is IPlayer or INonPlayerEntity);
